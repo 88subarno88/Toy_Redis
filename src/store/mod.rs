@@ -1,14 +1,14 @@
 use crate::protocol::resp::RespValue;
 use crate::store::hashmap::HashMap;
 use std::sync::{Arc,RwLock};
-
+pub mod hashmap;
 pub type Store=Arc<RwLock<HashMap<String,String>>>;
 
 pub enum Command<'a>{
     Ping(Option<&'a [u8]>),
     Set { key: &'a str, value: &'a str },
     Get{key: &'a str},
-    Del{keys: vec<&'a str>},
+    Del{keys: Vec<&'a str>},
     Exists{key: &'a str},
 }
 

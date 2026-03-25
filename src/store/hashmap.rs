@@ -176,3 +176,35 @@ impl<K: Eq + Hash, V> HashMap<K, V>{
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_set_get() {
+        let mut m: HashMap<String, String> = HashMap::new();
+        m.insert("hello".into(), "world".into());
+        assert_eq!(m.get(&"hello".into()), Some(&"world".into()));
+        assert_eq!(m.get(&"nope".into()), None);
+    }
+
+    #[test]
+    fn remove_and_tombstone() {
+        let mut m: HashMap<String, i32> = HashMap::new();
+        m.insert("a".into(), 1);
+        m.insert("b".into(), 2);
+        m.remove(&"a".into());
+        assert!(!m.contains_key(&"a".into()));
+        assert!(m.contains_key(&"b".into()));
+    }
+
+    #[test]
+    fn load_factor_respected() {
+        let mut m: HashMap<i32, i32> = HashMap::new();
+        for i in 0..10_000 {
+            m.insert(i, i * 2);
+        }
+        let load = m.len() as f64 / m.capacity as f64;
+        assert!(load <= 0.75, "load factor exceeded: {:.2}", load);
+    }
+}
