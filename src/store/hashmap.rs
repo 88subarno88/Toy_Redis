@@ -1,4 +1,4 @@
-use std::hash::{Hash.Hasher};
+use std::hash::{Hash,Hasher};
 
 struct FnvHasher(u64);
 
@@ -7,7 +7,7 @@ impl FnvHasher{
 }
 
 impl Hasher for FnvHasher{
-    fn Write(&mut self,bytes:&[u8]){
+    fn write(&mut self,bytes:&[u8]){
        for &b in bytes{
             self.0 ^= b as u64;
             self.0 = self.0.wrapping_mul(0x100000001b3);
@@ -16,7 +16,7 @@ impl Hasher for FnvHasher{
     fn finish(&self)->u64{self.0}
 }
 
-fn fnv_hash<K:Hash>(Key: &k)->u64{
+fn fnv_hash<K:Hash>(key: &K)->u64{
       let mut h=FnvHasher::new();
       key.hash(&mut h);
       h.finish()
@@ -41,15 +41,138 @@ impl<K,V>Slot<K,V>{
     }
 }
 
-pub struct hashMap<K,V>{
+
+pub struct HashMap<K, V> {
+    slots:    Vec<Slot<K, V>>,
+    len:      usize,   
+    capacity: usize,   
+}
+
+const LF: f64 = 0.75;
+
+impl<K: Eq + Hash, V> HashMap<K, V>{
     pub fn new()->Self{
         Self::with_capacity(16)
     }
-    pub fn with_capacity(capacity:usize) ->self{
-        let capacity=capacity.max(16).next_power_of_two;
+    pub fn with_capacity(capacity:usize) ->Self{
+        let capacity=capacity.max(16).next_power_of_two();
         let slots=(0..capacity).map(|_| Slot::Empty).collect();
-        hashMap{slots,len:0,capacity}
+        HashMap{slots,len:0,capacity}
     }
     pub fn len(&self)->usize{self.len}
-    pub fn is_empty(&self)->bool{self.len=0}
+    pub fn is_empty(&self)->bool{self.len==0}
+    fn ideal(&self,key: &K)->usize{
+        (fnv_hash(key) as usize)&(self.capacity-1)
+    }
+    fn resize(&mut self){
+       let new_cap=self.capacity*2;
+       let old_slots=std::mem::replace(
+        &mut self.slots,(0..new_cap).map(|_|Slot::Empty).collect(),
+       );
+       self.capacity=new_cap;
+       self.len=0;
+       for slot in old_slots{
+        if let Slot::Occupied{key,value,..}=slot{
+            self.insert(key,value);
+        }
+       }
+    }
+
+    pub fn insert(&mut self, mut key:K,mut value:V)->Option<V>{
+        if ((self.len+1) as f64>self.capacity as f64*LF){
+            self.resize();
+        }
+        let mut indx=self.ideal(&key);
+        let mut dist=0usize;
+        loop{
+            match &self.slots[indx]{
+                Slot::Empty|Slot::Tombstone=>{
+                    self.slots[indx]=Slot::Occupied{key,value,probe_dist:dist};
+                    self.len+=1;
+                    return None;
+                }
+                Slot::Occupied{key:k,..} if *k==key=>{
+                    if let Slot::Occupied{value:v,..}=&mut self.slots[indx]{
+                        return Some(std::mem::replace(v,value));
+                    }
+                    unreachable!()
+                }
+                Slot::Occupied{probe_dist:incument_dist,..}=>{
+                    if dist>self.slots[indx].probe_dist(){
+                        if let Slot::Occupied{
+                            key:k,value:v,probe_dist:d
+                        }=std::mem::replace(
+                            &mut self.slots[indx],
+                            Slot::Occupied{
+                                key,value,probe_dist:dist
+                            }){
+                                key=k;
+                                value=v;
+                                dist=d;
+                            }
+
+                            }
+                        
+                    }
+                }
+            
+            indx=(indx+1)&(self.capacity-1);
+            dist+=1;
+        }
+    }
+    fn find_slot(&self,key:&K)->Option<usize>{
+        let mut indx=self.ideal(&key);
+        let mut dist=0usize;
+        loop{
+            match &self.slots[indx]{
+                Slot::Empty=>return None,
+                Slot::Tombstone=>{},
+                Slot::Occupied{key:k,probe_dist,..}=>{
+                    if k==key{
+                        return Some(indx);
+                    }
+                    if dist>*probe_dist{
+                        return None;
+                    }
+                }
+            }
+            indx=(indx+1)&(self.capacity-1);
+            dist+=1;
+        }
+    }
+
+    pub fn get(&self,key:&K)->Option<&V>{
+         let indx=self.find_slot(key)?;
+         match &self.slots[indx]{
+            Slot::Occupied{value,..}=>Some(value),
+            _ =>None,
+         }
+    }
+
+    pub fn get_mut(&mut self,key:&K)->Option<&mut V>{
+         let indx=self.find_slot(key)?;
+         match &mut self.slots[indx]{
+            Slot::Occupied{value,..}=>Some(value),
+            _ =>None,
+         }
+    }
+    pub fn contains_key(&self,key:&K)->bool{
+        self.find_slot(key).is_some()
+    }
+    pub fn remove(&mut self,key:&K)->Option<V>{
+        let indx=self.find_slot(key)?;
+        let old=std::mem::replace(&mut self.slots[indx],Slot::Tombstone);
+        self.len-=1;
+        match old{
+            Slot::Occupied{value,..}=>Some(value),
+             _ => unreachable!(),
+        }
+    }
+    pub fn iter(&self)->impl Iterator<Item=(&K,&V)>{
+        self.slots.iter().filter_map(|s| match s{
+            Slot::Occupied{key,value,..}=>Some((key,value)),
+            _ =>None,
+        })
+    }
 }
+
