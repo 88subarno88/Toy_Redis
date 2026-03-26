@@ -16,12 +16,18 @@ impl Hasher for FnvHasher{
     fn finish(&self)->u64{self.0}
 }
 
-fn fnv_hash<K:Hash>(key: &K)->u64{
-      let mut h=FnvHasher::new();
-      key.hash(&mut h);
-      h.finish()
+fn fnv_hash<K: Hash>(key: &K) -> u64 {
+    let mut h = FnvHasher::new();
+    key.hash(&mut h);
+    let mut hash = h.finish();
+    hash ^= hash >> 33;
+    hash = hash.wrapping_mul(0xff51afd7ed558ccd);
+    hash ^= hash >> 33;
+    hash = hash.wrapping_mul(0xc4ceb9fe1a85ec53);
+    hash ^= hash >> 33;
+    
+    hash
 }
-
 #[derive(Debug)]
 enum Slot<K,V>{
     Empty,
@@ -77,45 +83,43 @@ impl<K: Eq + Hash, V> HashMap<K, V>{
         }
        }
     }
+    
 
     pub fn insert(&mut self, mut key:K,mut value:V)->Option<V>{
-        if ((self.len+1) as f64>self.capacity as f64*LF){
+        if (self.len+1) as f64>self.capacity as f64*LF{
             self.resize();
         }
         let mut indx=self.ideal(&key);
         let mut dist=0usize;
         loop{
-            match &self.slots[indx]{
-                Slot::Empty|Slot::Tombstone=>{
-                    self.slots[indx]=Slot::Occupied{key,value,probe_dist:dist};
-                    self.len+=1;
-                    return None;
-                }
-                Slot::Occupied{key:k,..} if *k==key=>{
-                    if let Slot::Occupied{value:v,..}=&mut self.slots[indx]{
-                        return Some(std::mem::replace(v,value));
-                    }
-                    unreachable!()
-                }
-                Slot::Occupied{probe_dist:incument_dist,..}=>{
-                    if dist>self.slots[indx].probe_dist(){
-                        if let Slot::Occupied{
-                            key:k,value:v,probe_dist:d
-                        }=std::mem::replace(
-                            &mut self.slots[indx],
-                            Slot::Occupied{
-                                key,value,probe_dist:dist
-                            }){
-                                key=k;
-                                value=v;
-                                dist=d;
-                            }
+            if self.slots[indx].is_empty() || self.slots[indx].is_tombstone() {
+                 self.slots[indx] = Slot::Occupied { key, value, probe_dist: dist };
+                 self.len += 1;
+                 return None;
+             }
 
-                            }
-                        
-                    }
-                }
-            
+             if let Slot::Occupied { key: ref k, .. } = self.slots[indx] {
+                 if k == &key { 
+                     if let Slot::Occupied { value: ref mut v, .. } = self.slots[indx] {
+                         return Some(std::mem::replace(v, value));
+                     }
+                     unreachable!()
+              }
+             }
+             let incumbent_dist = self.slots[indx].probe_dist();
+             if dist > incumbent_dist {
+                 let old = std::mem::replace(
+                     &mut self.slots[indx],
+                     Slot::Occupied { key, value, probe_dist: dist }
+                 );
+                 if let Slot::Occupied { key: k, value: v, probe_dist: d } = old {
+                     key = k;
+                    value = v;
+                     dist = d;
+                 } else {
+                     unreachable!();
+                 }
+            }
             indx=(indx+1)&(self.capacity-1);
             dist+=1;
         }
@@ -174,6 +178,7 @@ impl<K: Eq + Hash, V> HashMap<K, V>{
             _ =>None,
         })
     }
+    
 }
 
 #[cfg(test)]
@@ -201,7 +206,7 @@ mod tests {
     #[test]
     fn load_factor_respected() {
         let mut m: HashMap<i32, i32> = HashMap::new();
-        for i in 0..10_000 {
+        for i in 0..10_000_000_ {
             m.insert(i, i * 2);
         }
         let load = m.len() as f64 / m.capacity as f64;
