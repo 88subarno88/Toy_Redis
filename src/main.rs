@@ -1,8 +1,9 @@
-mod server;
-mod store;
-mod commands;
-mod protocol;
-
+// mod server;
+// mod store;
+// mod commands;
+// mod protocol;
+use toy_redis::server; 
+use toy_redis::store;
 use std::net::TcpListener;
 
 

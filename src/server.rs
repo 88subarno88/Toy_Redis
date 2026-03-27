@@ -1,52 +1,55 @@
+use std::{io::Read, net::TcpStream};
 
+use crate::{
+    commands::{parse_command, Command, Store},   
+    protocol::{resp::parse, writer::RespWriter}, 
+};
 
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, RwLock};
-use crate::store::hashmap::HashMap;
-use crate::commands::{execute, parse_command, Store};
-use crate::protocol::resp::parse;
-
-pub fn run(listener: TcpListener) {
-    // FIXED: Changed :: to = for variable assignment
-    let store: Store = Arc::new(RwLock::new(HashMap::new()));
-
-    for stream in listener.incoming() {
-        // FIXED: Safely handle the connection result to avoid panics
-        match stream {
-            Ok(valid_stream) => {
-                let store = Arc::clone(&store);
-                std::thread::spawn(move || {
-                    handle_connection(valid_stream, store);
-                });
-            }
-            Err(e) => {
-                eprintln!("Failed to establish connection: {}", e);
-            }
-        }
-    }
-}
-
-fn handle_connection(mut stream: TcpStream, store: Store) {
-    let mut buf = vec![0u8; 4096];
+pub fn handle_connection(mut stream:TcpStream,store:Store){
+    let mut buf=vec![0u8;4096];
     loop {
-        let n = match stream.read(&mut buf) {
-            Ok(0) | Err(_) => return, // Connection closed or error
+        let n=match stream.read(&mut buf) {
+            Ok(0) | Err(_) => return,
             Ok(n) => n,
         };
-        
-        match parse(&buf[..n]) {
-            Ok((resp_val, _consumed)) => {
-                if let Some(cmd) = parse_command(&resp_val) {
-                    let response = execute(cmd, &store);
-                    stream.write_all(&response).unwrap();
-                } else {
-                    stream.write_all(b"-ERR unknown command\r\n").unwrap();
+
+        let mut writer=RespWriter::new(&mut stream);
+
+        match parse(&buf[..n]){
+            Ok((resp_val, _))=>{
+                  match parse_command(&resp_val) {
+                    Some(Command::Ping(None))=>{writer.write_simple_string(b"PONG").unwrap();}
+                    Some(Command::Ping(Some(m))) => {writer.write_bulk_string(m).unwrap();}
+                    Some(Command::Set { key, value }) => {
+                        store.write().unwrap().insert(key.to_string(), value.to_string());
+                        writer.write_simple_string(b"OK").unwrap();
+                    }
+                    Some(Command::Get {key})=>{
+                           let guard = store.read().unwrap();
+                            match guard.get(&key.to_string()) {
+                            Some(v) => writer.write_bulk_string(v.as_bytes()).unwrap(),
+                            None    => writer.write_null().unwrap(),
+                        }
+                    }
+                    Some(Command::Del { keys })=>{
+                        let mut guard=store.write().unwrap();
+                        let count=keys.iter()
+                                     .filter(|k| guard.remove(&k.to_string()).is_some())
+                                     .count();
+                        writer.write_int(count as i64).unwrap();
+                    }
+                    Some(Command::Exists { key }) => {
+                        let exists = store.read().unwrap().contains_key(&key.to_string());
+                        writer.write_int(exists as i64).unwrap();
+                    }
+                    None => { writer.write_error(b"ERR unknown command").unwrap(); }
+                    
                 }
+
+
             }
-            Err(_) => {
-                stream.write_all(b"-ERR parse error\r\n").unwrap();
-            }
+              Err(_) => { writer.write_error(b"ERR parse error").unwrap(); }
+
         }
     }
 }

@@ -32,15 +32,16 @@ impl<T,const SLAB_SIZE: usize>slabAllocator<T,SLAB_SIZE>{
         //         MaybeUninit::uninit().assume_init()
         //     }
         // );
-
-        let base_ptr=slab.as_mut_ptr() as *mut MaybeUninit<T>;
+        self.slabs.push(slab);
+        let current_slab = self.slabs.last_mut().unwrap();
+        let base_ptr=current_slab.as_mut_ptr() as *mut MaybeUninit<T>;
         for i in (0..SLAB_SIZE).rev(){
             let slot_ptr= unsafe {
                 base_ptr.add(i) as *mut T
             };
             self.free_list.push(slot_ptr);
         }
-       self.slabs.push(slab);
+    //    self.slabs.push(slab);
     }
 
     pub fn alloc(&mut self)->*mut T{
@@ -129,16 +130,27 @@ mod tests {
 
     // Test 4: 500k alloc/dealloc (the assignment's required test)
     #[test]
-    fn stress_500k() {
+    // Test 4: Stress test
+    #[test]
+    fn stress_test() {
         let mut slab: slabAllocator<u64, 1024> = slabAllocator::new();
-        let mut ptrs = Vec::with_capacity(500_000);
+        
+        // FIX: Tell Miri to only do 1,000 iterations to save time. 
+        // When running normal `cargo test`, it will do the full 500,000.
+        #[cfg(miri)]
+        let iterations = 1_000;
+        
+        #[cfg(not(miri))]
+        let iterations = 500_000;
 
-        for i in 0..500_000u64 {
+        let mut ptrs = Vec::with_capacity(iterations as usize);
+
+        for i in 0..iterations {
             let p = slab.alloc();
-            unsafe { p.write(i) };
+            unsafe { p.write(i as u64) };
             ptrs.push(p);
         }
-        assert_eq!(slab.stats().used, 500_000);
+        assert_eq!(slab.stats().used, iterations as usize);
 
         for p in ptrs {
             unsafe { std::ptr::drop_in_place(p) };
