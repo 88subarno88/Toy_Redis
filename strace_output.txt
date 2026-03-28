@@ -1,0 +1,2 @@
+--- SIGWINCH {si_signo=SIGWINCH, si_code=SI_KERNEL} ---
+strace: Process 17088 detached

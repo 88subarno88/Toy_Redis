@@ -1,5 +1,3 @@
-// src/commands/handlers.rs
-
 use crate::protocol::resp::RespValue;
 use crate::store::hashmap::HashMap;
 use std::sync::{Arc, RwLock};
@@ -12,9 +10,24 @@ pub enum Command<'a> {
     Get { key: &'a str },
     Del { keys: Vec<&'a str> },
     Exists { key: &'a str },
+    Keys { pattern: &'a str },
 }
 
-// FIXED: Added <'a> to RespValue so the compiler knows it holds borrowed data
+pub fn keys_match(pattern:&str,key:&str)->bool{
+    glo_match(pattern.as_bytes(),key.as_bytes())
+}
+
+fn glo_match(pat:&[u8],s:&[u8])->bool{
+    match(pat.first(),s.first()){
+        (None,None) =>true,
+        (Some(b'*'),_)=> glo_match(&pat[1..], s) || (!s.is_empty() && glo_match(pat, &s[1..])),
+        (Some(b'?'),Some(_))=> glo_match(&pat[1..], &s[1..]),
+        (Some(p), Some(c)) if p == c => glo_match(&pat[1..], &s[1..]),
+        _                  => false,
+
+    }
+}
+
 pub fn parse_command<'a>(val: &RespValue<'a>) -> Option<Command<'a>> {
     let args = match val {
         RespValue::Array(a) => a,
@@ -51,6 +64,13 @@ pub fn parse_command<'a>(val: &RespValue<'a>) -> Option<Command<'a>> {
                 _ => return None,
             };
             Some(Command::Get { key })
+        }
+        "KEYS" => {
+            let pattern = match args.get(1)? {
+                RespValue::BulkString(b) => std::str::from_utf8(b).ok()?,
+                _ => return None,
+            };
+            Some(Command::Keys { pattern })
         }
         _ => None,
     }
@@ -92,6 +112,22 @@ pub fn execute(cmd: Command, store: &Store) -> Vec<u8> {
             let guard = store.read().unwrap();
             let exists = guard.contains_key(&key.to_string()) as u8;
             format!(":{}\r\n", exists).into_bytes()
+        }
+        Command::Keys { pattern } => {
+            let guard = store.read().unwrap();
+            
+            let mut matched_keys = Vec::new();
+            for (k, _) in guard.iter() {
+                if keys_match(pattern, k) {
+                    matched_keys.push(k.clone());
+                }
+            }
+            let mut r = format!("*{}\r\n", matched_keys.len()).into_bytes();
+            for key in matched_keys {
+                let bulk_str = format!("${}\r\n{}\r\n", key.len(), key);
+                r.extend_from_slice(bulk_str.as_bytes());
+            }
+            r
         }
     }
 }

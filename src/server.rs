@@ -1,9 +1,35 @@
 use std::{io::Read, net::TcpStream};
+use std::net::TcpListener;
+use std::thread;
+use std::sync::{Arc, RwLock};
+// use std::collections::HashMap;
+// use crate::commands::Store; 
+use crate::store::hashmap::HashMap;
 
 use crate::{
-    commands::{parse_command, Command, Store},   
+    commands::{parse_command, Command, Store,keys_match},   
     protocol::{resp::parse, writer::RespWriter}, 
 };
+
+pub fn run(listener: TcpListener) {
+    let store: Store = Arc::new(RwLock::new(HashMap::new())); 
+
+    println!("Waiting for clients to connect...");
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                let store_clone = Arc::clone(&store);
+                thread::spawn(move || {
+                    handle_connection(stream, store_clone);
+                });
+            }
+            Err(e) => {
+                eprintln!("Connection failed: {}", e);
+            }
+        }
+    }
+}
 
 pub fn handle_connection(mut stream:TcpStream,store:Store){
     let mut buf=vec![0u8;4096];
@@ -41,6 +67,20 @@ pub fn handle_connection(mut stream:TcpStream,store:Store){
                     Some(Command::Exists { key }) => {
                         let exists = store.read().unwrap().contains_key(&key.to_string());
                         writer.write_int(exists as i64).unwrap();
+                    }
+                    Some(Command::Keys { pattern }) => {
+                        let guard = store.read().unwrap();
+                        let mut matched_keys = Vec::new();
+                        
+                        for (k, _) in guard.iter() {
+                            if keys_match(pattern, k) {
+                                matched_keys.push(k.clone());
+                            }
+                        }
+                        writer.write_array_header(matched_keys.len()).unwrap();
+                        for key in matched_keys {
+                            writer.write_bulk_string(key.as_bytes()).unwrap();
+                        }
                     }
                     None => { writer.write_error(b"ERR unknown command").unwrap(); }
                     

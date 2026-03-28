@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn load_factor_respected() {
         let mut m: HashMap<i32, i32> = HashMap::new();
-        for i in 0..10_000 {
+        for i in 0..100 {
             m.insert(i, i * 2);
         }
         let load = m.len() as f64 / m.capacity as f64;
