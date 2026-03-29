@@ -34,17 +34,26 @@ pub fn run(listener: TcpListener, store: Store, expiry: Expiry_map) {
 }
 
 pub fn handle_connection(mut stream:TcpStream,store:Store,expiry: Expiry_map){
+    let mut buffer: Vec<u8> = Vec::new();
     let mut buf=vec![0u8;4096];
-    loop {
-        let n=match stream.read(&mut buf) {
-            Ok(0) | Err(_) => return,
+   loop {
+
+        let n = match stream.read(&mut buf) {
+            Ok(0) | Err(_) => return, 
             Ok(n) => n,
         };
 
-        let mut writer=RespWriter::new(&mut stream);
+        buffer.extend_from_slice(&buf[..n]);
 
-        match parse(&buf[..n]){
-            Ok((resp_val, _))=>{
+        let mut writer = RespWriter::new(&mut stream);
+
+    
+        loop {
+            if buffer.is_empty() {
+                break;
+            }
+        match parse(&buffer){
+            Ok((resp_val, bytes_consm))=>{
                   match parse_command(&resp_val) {
                     Some(Command::Ping(None))=>{writer.write_simple_string(b"PONG").unwrap();}
                     Some(Command::Ping(Some(m))) => {writer.write_bulk_string(m).unwrap();}
@@ -116,11 +125,19 @@ pub fn handle_connection(mut stream:TcpStream,store:Store,expiry: Expiry_map){
                     None => { writer.write_error(b"ERR unknown command").unwrap(); }
                     
                 }
+                buffer.drain(..bytes_consm);
 
 
             }
-              Err(_) => { writer.write_error(b"ERR parse error").unwrap(); }
+              Err(_) => { 
+                if buffer.len()>1024*1024{
+                    buffer.clear();
+                    let _=writer.write_error(b"ERROR payload is too large");
+                }
+                break;
+               }
 
         }
     }
+}
 }

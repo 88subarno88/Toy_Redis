@@ -67,6 +67,9 @@ impl<K: Eq + Hash, V> HashMap<K, V>{
     }
     pub fn len(&self)->usize{self.len}
     pub fn is_empty(&self)->bool{self.len==0}
+    pub  fn capacity(&self)->usize{
+        return  self.capacity
+    }
     fn ideal(&self,key: &K)->usize{
         (fnv_hash(key) as usize)&(self.capacity-1)
     }
@@ -178,6 +181,7 @@ impl<K: Eq + Hash, V> HashMap<K, V>{
             _ =>None,
         })
     }
+
     
 }
 
