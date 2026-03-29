@@ -58,33 +58,34 @@ pub fn handle_connection(mut stream:TcpStream,store:Store,expiry: Expiry_map){
                     Some(Command::Ping(None))=>{writer.write_simple_string(b"PONG").unwrap();}
                     Some(Command::Ping(Some(m))) => {writer.write_bulk_string(m).unwrap();}
                     Some(Command::Set { key, value }) => {
-                        store.write().unwrap().insert(key.to_string(), value.to_string());
+                        store.insert(key.to_string(), value.to_string());
                         writer.write_simple_string(b"OK").unwrap();
                     }
                     Some(Command::Get {key})=>{
-                           let guard = store.read().unwrap();
-                            match guard.get(&key.to_string()) {
+                        //    let guard = store.read().unwrap();
+                            match store.get(&key.to_string()) {
                             Some(v) => writer.write_bulk_string(v.as_bytes()).unwrap(),
                             None    => writer.write_null().unwrap(),
                         }
                     }
                     Some(Command::Del { keys })=>{
-                        let mut guard=store.write().unwrap();
+                        // let mut guard=store.write().unwrap();
                         let count=keys.iter()
-                                     .filter(|k| guard.remove(&k.to_string()).is_some())
+                                     .filter(|k| store.remove(&k.to_string()).is_some())
                                      .count();
                         writer.write_int(count as i64).unwrap();
                     }
                     Some(Command::Exists { key }) => {
-                        let exists = store.read().unwrap().contains_key(&key.to_string());
+                        let exists = store.contains_key(&key.to_string());
                         writer.write_int(exists as i64).unwrap();
                     }
                     Some(Command::Keys { pattern }) => {
-                        let guard = store.read().unwrap();
+                        // let guard = store.read().unwrap();
+                        let all_keys = store.get_all_keys();
                         let mut matched_keys = Vec::new();
                         
-                        for (k, _) in guard.iter() {
-                            if keys_match(pattern, k) {
+                        for k in all_keys {
+                            if keys_match(pattern, &k) {
                                 matched_keys.push(k.clone());
                             }
                         }
@@ -94,7 +95,7 @@ pub fn handle_connection(mut stream:TcpStream,store:Store,expiry: Expiry_map){
                         }
                     }
                     Some(Command::Expire { key, seconds }) => {
-                        let exists = store.read().unwrap().contains_key(&key.to_string());
+                        let exists = store.contains_key(&key.to_string());
         
                         if exists {
                             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
@@ -116,7 +117,7 @@ pub fn handle_connection(mut stream:TcpStream,store:Store,expiry: Expiry_map){
                             } else {
                                 writer.write_int(-2).unwrap(); 
                             }
-                        } else if store.read().unwrap().contains_key(&key.to_string()) {
+                        } else if store.contains_key(&key.to_string()) {
                             writer.write_int(-1).unwrap();
                         } else {
                             writer.write_int(-2).unwrap(); 

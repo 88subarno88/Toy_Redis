@@ -5,6 +5,7 @@ use crate::store::allocator::slabAllocator;
 
 pub mod hashmap;
 pub mod allocator;
+pub mod sharded;
 
 // pub type Value=SlabBox<String>;
 pub type Allocator=Arc<Mutex<slabAllocator<String, 1024>>>;

@@ -1,11 +1,12 @@
 use std::sync::{Arc,RwLock};
 use std::time::{Duration,Instant};
 use crate::store::hashmap::HashMap;
+use crate::commands::handlers::Store;
 
 pub type Expiry_map=Arc<RwLock<HashMap<String,Instant>>>;
 
 pub fn  strt_expiry_thread(
-    store:Arc<RwLock<HashMap<String,String>>>,
+    store:Store,
     expiry:Expiry_map,
 ){
     std::thread::spawn(move||{
@@ -23,8 +24,7 @@ pub fn  strt_expiry_thread(
 
             }
             if !expired_keys.is_empty(){
-                let mut store=store.write().unwrap();
-                let mut expire=expiry.write().unwrap();
+                let mut expire = expiry.write().unwrap();
                 for k in expired_keys{
                     store.remove(&k);
                     expire.remove(&k);

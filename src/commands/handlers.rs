@@ -2,7 +2,8 @@ use crate::protocol::resp::RespValue;
 use crate::store::hashmap::HashMap;
 use std::sync::{Arc, RwLock};
 
-pub type Store = Arc<RwLock<HashMap<String, String>>>;
+use crate::store::sharded::ShardedStore;
+pub type Store = std::sync::Arc<ShardedStore>;
 
 pub enum Command<'a> {
     Ping(Option<&'a [u8]>),
@@ -125,13 +126,12 @@ pub fn execute(cmd: Command, store: &Store) -> Vec<u8> {
             r.extend_from_slice(b"\r\n");
             r
         }
-        Command::Set { key, value } => {
-            store.write().unwrap().insert(key.to_string(), value.to_string());
+       Command::Set { key, value } => {
+            store.insert(key.to_string(), value.to_string());
             b"+OK\r\n".to_vec()
         }
         Command::Get { key } => {
-            let guard = store.read().unwrap();
-            match guard.get(&key.to_string()) {
+            match store.get(&key.to_string()) {
                 Some(v) => {
                     let mut r = format!("${}\r\n", v.len()).into_bytes();
                     r.extend_from_slice(v.as_bytes());
@@ -142,26 +142,25 @@ pub fn execute(cmd: Command, store: &Store) -> Vec<u8> {
             }
         }
         Command::Del { keys } => {
-            let mut guard = store.write().unwrap();
             let count = keys.iter()
-                 .filter(|k| guard.remove(&k.to_string()).is_some())
+                 .filter(|k| store.remove(&k.to_string()).is_some())
                  .count();
             format!(":{}\r\n", count).into_bytes()    
         }
         Command::Exists { key } => {
-            let guard = store.read().unwrap();
-            let exists = guard.contains_key(&key.to_string()) as u8;
+            let exists = store.contains_key(&key.to_string()) as u8;
             format!(":{}\r\n", exists).into_bytes()
         }
         Command::Keys { pattern } => {
-            let guard = store.read().unwrap();
-            
+            let all_keys = store.get_all_keys();
             let mut matched_keys = Vec::new();
-            for (k, _) in guard.iter() {
-                if keys_match(pattern, k) {
+            
+            for k in all_keys {
+                if keys_match(pattern, &k) {
                     matched_keys.push(k.clone());
                 }
             }
+            
             let mut r = format!("*{}\r\n", matched_keys.len()).into_bytes();
             for key in matched_keys {
                 let bulk_str = format!("${}\r\n{}\r\n", key.len(), key);
