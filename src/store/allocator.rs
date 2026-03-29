@@ -135,8 +135,7 @@ mod tests {
     fn stress_test() {
         let mut slab: slabAllocator<u64, 1024> = slabAllocator::new();
         
-        // FIX: Tell Miri to only do 1,000 iterations to save time. 
-        // When running normal `cargo test`, it will do the full 500,000.
+      
         #[cfg(miri)]
         let iterations = 1_000;
         

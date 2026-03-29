@@ -11,6 +11,8 @@ pub enum Command<'a> {
     Del { keys: Vec<&'a str> },
     Exists { key: &'a str },
     Keys { pattern: &'a str },
+    Expire { key: &'a str, seconds: u64 }, 
+    Ttl { key: &'a str },                  
 }
 
 pub fn keys_match(pattern:&str,key:&str)->bool{
@@ -72,6 +74,44 @@ pub fn parse_command<'a>(val: &RespValue<'a>) -> Option<Command<'a>> {
             };
             Some(Command::Keys { pattern })
         }
+        "DEL" => {
+            let mut keys = Vec::new();
+            for i in 1..args.len() {
+                if let Some(RespValue::BulkString(b)) = args.get(i) {
+                    if let Ok(s) = std::str::from_utf8(b) {
+                        keys.push(s);
+                    }
+                }
+            }
+            if keys.is_empty() { return None; }
+            Some(Command::Del { keys })
+        }
+        "EXISTS" => {
+            let key = match args.get(1)? {
+                RespValue::BulkString(b) => std::str::from_utf8(b).ok()?,
+                _ => return None,
+            };
+            Some(Command::Exists { key })
+        }
+        "EXPIRE" => {
+            let key = match args.get(1)? {
+                RespValue::BulkString(b) => std::str::from_utf8(b).ok()?,
+                _ => return None,
+            };
+            let secs_str = match args.get(2)? {
+                RespValue::BulkString(b) => std::str::from_utf8(b).ok()?,
+                _ => return None,
+            };
+            let seconds = secs_str.parse::<u64>().ok()?;
+            Some(Command::Expire { key, seconds })
+        }
+        "TTL" => {
+            let key = match args.get(1)? {
+                RespValue::BulkString(b) => std::str::from_utf8(b).ok()?,
+                _ => return None,
+            };
+            Some(Command::Ttl { key })
+        }
         _ => None,
     }
 }
@@ -128,6 +168,12 @@ pub fn execute(cmd: Command, store: &Store) -> Vec<u8> {
                 r.extend_from_slice(bulk_str.as_bytes());
             }
             r
+        }
+        Command::Expire { .. } => {
+            b"-ERR EXPIRE not supported in this context\r\n".to_vec()
+        }
+        Command::Ttl { .. } => {
+            b"-ERR TTL not supported in this context\r\n".to_vec()
         }
     }
 }
