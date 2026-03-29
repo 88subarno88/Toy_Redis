@@ -7,33 +7,40 @@ use crate::expiry::Expiry_map;
 // use crate::commands::Store; 
 use crate::store::hashmap::HashMap;
 use std::time::Instant;
+use crate::aof::Aof;
+
 
 use crate::{
     commands::{parse_command, Command, Store,keys_match},   
     protocol::{resp::parse, writer::RespWriter}, 
 };
 
-pub fn run(listener: TcpListener, store: Store, expiry: Expiry_map) {
-
-    println!("Waiting for clients to connect...");
-
+pub fn run(
+    listener: std::net::TcpListener, 
+    store: crate::commands::handlers::Store, 
+    expiry: crate::expiry::Expiry_map, 
+    aof: crate::aof::Aof 
+) {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                let store_clone = Arc::clone(&store);
-                let expiry_clone = Arc::clone(&expiry);
-                thread::spawn(move || {
-                    handle_connection(stream, store_clone,expiry_clone);
+                let store = std::sync::Arc::clone(&store);
+                let expiry = std::sync::Arc::clone(&expiry);
+                let aof = aof.clone(); 
+
+                std::thread::spawn(move || {
                 });
             }
-            Err(e) => {
-                eprintln!("Connection failed: {}", e);
-            }
+            Err(e) => { println!("Connection failed: {}", e); }
         }
     }
 }
 
-pub fn handle_connection(mut stream:TcpStream,store:Store,expiry: Expiry_map){
+pub fn handle_connection(mut stream: std::net::TcpStream, 
+    store: crate::commands::handlers::Store, 
+    expiry: crate::expiry::Expiry_map, 
+    aof: crate::aof::Aof ){
+
     let mut buffer: Vec<u8> = Vec::new();
     let mut buf=vec![0u8;4096];
    loop {
@@ -57,8 +64,13 @@ pub fn handle_connection(mut stream:TcpStream,store:Store,expiry: Expiry_map){
                   match parse_command(&resp_val) {
                     Some(Command::Ping(None))=>{writer.write_simple_string(b"PONG").unwrap();}
                     Some(Command::Ping(Some(m))) => {writer.write_bulk_string(m).unwrap();}
-                    Some(Command::Set { key, value }) => {
-                        store.insert(key.to_string(), value.to_string());
+                   Some(Command::Set { key, value }) => {
+                       store.insert(key.to_string(), value.to_string());
+                        let log = format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n", 
+                            key.len(), key, value.len(), value);
+                        aof.log_command(&log);
+                        
+                    
                         writer.write_simple_string(b"OK").unwrap();
                     }
                     Some(Command::Get {key})=>{
@@ -68,11 +80,19 @@ pub fn handle_connection(mut stream:TcpStream,store:Store,expiry: Expiry_map){
                             None    => writer.write_null().unwrap(),
                         }
                     }
-                    Some(Command::Del { keys })=>{
-                        // let mut guard=store.write().unwrap();
-                        let count=keys.iter()
+                    Some(Command::Del { keys }) => {
+                        let count = keys.iter()
                                      .filter(|k| store.remove(&k.to_string()).is_some())
                                      .count();
+                                     
+                        if count > 0 {
+                            let mut log = format!("*{}\r\n$3\r\nDEL\r\n", keys.len() + 1);
+                            for k in &keys {
+                                log.push_str(&format!("${}\r\n{}\r\n", k.len(), k));
+                            }
+                            aof.log_command(&log);
+                        }
+                        
                         writer.write_int(count as i64).unwrap();
                     }
                     Some(Command::Exists { key }) => {

@@ -4,4 +4,5 @@ pub mod server;
 pub mod protocol;
 pub mod commands;
 pub mod expiry;
+pub mod aof;
 // pub mod writer;
