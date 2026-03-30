@@ -35,7 +35,9 @@ impl TestServer {
 
         expiry::strt_expiry_thread(Arc::clone(&store), Arc::clone(&expiry));
 
-        server::run(listener, store, expiry, aof, pubsub);
+        thread::spawn(move || {
+            server::run(listener, store, expiry, aof, pubsub);
+        });
 
         thread::sleep(Duration::from_millis(50));
         TestServer { port }
