@@ -1,4 +1,5 @@
-use std::{io::Read, net::TcpStream};
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::net::TcpListener;
 use std::thread;
 use std::sync::{Arc, RwLock};
@@ -8,6 +9,7 @@ use crate::expiry::Expiry_map;
 use crate::store::hashmap::HashMap;
 use std::time::Instant;
 use crate::aof::Aof;
+use crate::pubsub::PubSub;
 
 
 use crate::{
@@ -19,7 +21,8 @@ pub fn run(
     listener: std::net::TcpListener, 
     store: crate::commands::handlers::Store, 
     expiry: crate::expiry::Expiry_map, 
-    aof: crate::aof::Aof 
+    aof: crate::aof::Aof ,
+    pubsub: crate::pubsub::PubSub
 ) {
     for stream in listener.incoming() {
         match stream {
@@ -27,9 +30,10 @@ pub fn run(
                 let store = std::sync::Arc::clone(&store);
                 let expiry = std::sync::Arc::clone(&expiry);
                 let aof = aof.clone(); 
+               let pubsub = pubsub.clone();
 
                 std::thread::spawn(move || {
-                    handle_connection(stream, store, expiry, aof);
+                    handle_connection(stream, store, expiry, aof,pubsub);
                 });
             }
             Err(e) => { println!("Connection failed: {}", e); }
@@ -40,7 +44,8 @@ pub fn run(
 pub fn handle_connection(mut stream: std::net::TcpStream, 
     store: crate::commands::handlers::Store, 
     expiry: crate::expiry::Expiry_map, 
-    aof: crate::aof::Aof ){
+    aof: crate::aof::Aof,
+    pubsub:crate::pubsub::PubSub ){
 
     let mut buffer: Vec<u8> = Vec::new();
     let mut buf=vec![0u8;4096];
@@ -143,6 +148,30 @@ pub fn handle_connection(mut stream: std::net::TcpStream,
                         } else {
                             writer.write_int(-2).unwrap(); 
                         }
+                    }
+                    Some(Command::Publish { channel, message }) => {
+                        let listeners = pubsub.publish(channel, message);
+                        writer.write_int(listeners as i64).unwrap();
+                    }
+                    
+                    Some(Command::Subscribe { channels }) => {
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        
+                        for channel in &channels {
+                            pubsub.subscribe(channel, tx.clone());
+                            let ack = format!("*3\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n:1\r\n", channel.len(), channel);
+                            stream.write_all(ack.as_bytes()).unwrap();
+                        }
+                        
+                        for msg in rx {
+                            let reply = format!("*3\r\n$7\r\nmessage\r\n${}\r\n{}\r\n${}\r\n{}\r\n", 
+                                channels[0].len(), channels[0], msg.len(), msg);
+                            
+                            if stream.write_all(reply.as_bytes()).is_err() {
+                                break; 
+                            }
+                        }
+                        return; 
                     }
                     None => { writer.write_error(b"ERR unknown command").unwrap(); }
                     

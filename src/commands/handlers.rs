@@ -13,7 +13,9 @@ pub enum Command<'a> {
     Exists { key: &'a str },
     Keys { pattern: &'a str },
     Expire { key: &'a str, seconds: u64 }, 
-    Ttl { key: &'a str },                  
+    Ttl { key: &'a str }, 
+    Publish { channel: &'a str, message: &'a str },
+    Subscribe { channels: Vec<&'a str> },                 
 }
 
 pub fn keys_match(pattern:&str,key:&str)->bool{
@@ -113,6 +115,29 @@ pub fn parse_command<'a>(val: &RespValue<'a>) -> Option<Command<'a>> {
             };
             Some(Command::Ttl { key })
         }
+        "PUBLISH" => {
+            let channel = match args.get(1)? {
+                RespValue::BulkString(b) => std::str::from_utf8(b).ok()?,
+                _ => return None,
+            };
+            let message = match args.get(2)? {
+                RespValue::BulkString(b) => std::str::from_utf8(b).ok()?,
+                _ => return None,
+            };
+            Some(Command::Publish { channel, message })
+        }
+        "SUBSCRIBE" => {
+            let mut channels = Vec::new();
+            for i in 1..args.len() {
+                if let Some(RespValue::BulkString(b)) = args.get(i) {
+                    if let Ok(s) = std::str::from_utf8(b) {
+                        channels.push(s);
+                    }
+                }
+            }
+            if channels.is_empty() { return None; }
+            Some(Command::Subscribe { channels })
+        }
         _ => None,
     }
 }
@@ -173,6 +198,12 @@ pub fn execute(cmd: Command, store: &Store) -> Vec<u8> {
         }
         Command::Ttl { .. } => {
             b"-ERR TTL not supported in this context\r\n".to_vec()
+        }
+        Command::Publish { .. } => {
+            b"-ERR PUBLISH not supported in this context\r\n".to_vec()
+        }
+        Command::Subscribe { .. } => {
+            b"-ERR SUBSCRIBE not supported in this context\r\n".to_vec()
         }
     }
 }
