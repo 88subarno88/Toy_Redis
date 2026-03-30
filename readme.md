@@ -122,4 +122,4 @@ Reading messages... (press Ctrl-C to quit)
 
 ## Benchmarks
 
-View the full [Criterion.rs Benchmark Report](https://88subarno88.github.io/toy_redis/target/criterion/report/index.html).
+View the full [Criterion.rs Benchmark Report](https://88subarno88.github.io/Toy_Redis/target/criterion/report/index.html).
