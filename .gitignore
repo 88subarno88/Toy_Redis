@@ -1,2 +1,10 @@
 /target/
 !target/criterion/
+__pycache__/
+*.py[cod]
+*$py.class
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
