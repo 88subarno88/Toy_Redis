@@ -1,0 +1,30 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Redis Graph</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h2>Rust Database Performance (Milliseconds)</h2>
+    <div style="width: 600px;">
+        <canvas id="myChart"></canvas>
+    </div>
+
+    <script>
+        const data = {"Ping": 1.8842220306396484, "10k Writes": 407.2244167327881, "10k Reads": 383.40067863464355, "10k Deletes": 481.69922828674316};
+        new Chart(document.getElementById('myChart'), {
+            type: 'bar',
+            data: {
+                labels: Object.keys(data),
+                datasets: [{
+                    label: 'Time (ms)',
+                    data: Object.values(data),
+                    borderWidth: 1
+                }]
+            },
+            options: { scales: { y: { beginAtZero: true } } }
+        });
+    </script>
+</body>
+</html>

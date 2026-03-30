@@ -11,6 +11,9 @@ use toy_redis::commands::handlers::Store;
 use toy_redis::expiry::Expiry_map;
 use toy_redis::server;
 use toy_redis::expiry;
+use toy_redis::aof::Aof;
+use toy_redis::pubsub::PubSub;
+use toy_redis::store::sharded::ShardedStore;
 
 
 struct TestServer {
@@ -23,12 +26,16 @@ impl TestServer {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
 
-        let store:  Store     = Arc::new(RwLock::new(HashMap::new()));
-        let expiry: Expiry_map = Arc::new(RwLock::new(HashMap::new()));
+         let store = Arc::new(ShardedStore::new());
+        let expiry = Arc::new(RwLock::new(HashMap::new()));
+
+        let aof = Aof::new("test_appendonly.aof");
+
+        let pubsub = PubSub::new();
 
         expiry::strt_expiry_thread(Arc::clone(&store), Arc::clone(&expiry));
 
-        thread::spawn(move || server::run(listener, store, expiry));
+        server::run(listener, store, expiry, aof, pubsub);
 
         thread::sleep(Duration::from_millis(50));
         TestServer { port }
