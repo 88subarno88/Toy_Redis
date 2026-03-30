@@ -29,6 +29,7 @@ pub fn run(
                 let aof = aof.clone(); 
 
                 std::thread::spawn(move || {
+                    handle_connection(stream, store, expiry, aof);
                 });
             }
             Err(e) => { println!("Connection failed: {}", e); }

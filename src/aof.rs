@@ -48,20 +48,22 @@ pub fn restore_from_aof(path: &str, store: &Store) {
     let mut lines = reader.lines().filter_map(|l| l.ok());
 
     while let Some(line) = lines.next() {
-        if line.starts_with('*') {
+        let clean_line = line.trim();
+        
+        if clean_line.starts_with('*') {
             lines.next(); 
-            let cmd = lines.next().unwrap_or_default().to_uppercase();
-
+            let cmd = lines.next().unwrap_or_default().trim().to_uppercase();
             if cmd == "SET" {
                 lines.next(); 
-                let key = lines.next().unwrap_or_default();
+                let key = lines.next().unwrap_or_default().trim().to_string();
                 lines.next(); 
-                let value = lines.next().unwrap_or_default();
+                let value = lines.next().unwrap_or_default().trim().to_string();
                 store.insert(key, value);
             } 
             else if cmd == "DEL" {
                 lines.next(); 
-                let key = lines.next().unwrap_or_default();
+                let key = lines.next().unwrap_or_default().trim().to_string();
+                
                 store.remove(&key);
             }
         }
